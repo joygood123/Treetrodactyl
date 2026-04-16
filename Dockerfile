@@ -14,20 +14,27 @@ WORKDIR /app
 # ── Dependencies ────────────────────────────────────────────────────
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Use npm install instead of npm ci — ci requires a package-lock.json to exist.
+# If you commit your package-lock.json you can switch back to: npm ci --only=production
+RUN npm install --only=production && npm cache clean --force
 
 # ── Production image ────────────────────────────────────────────────
 FROM base AS production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Create default directories (may be overridden by volume mounts)
-RUN mkdir -p /var/www/user-sites /tmp/deployboard-builds
-
-# Non-root user for security
+# Non-root user for security — create BEFORE making dirs so chown works
 RUN addgroup -g 1001 -S deployboard && \
     adduser  -u 1001 -S deployboard -G deployboard
-RUN chown -R deployboard:deployboard /app /var/www/user-sites /tmp/deployboard-builds
+
+# Create directories and assign ownership to the deployboard user
+# IMPORTANT: /var/www/user-sites must be owned by deployboard (uid 1001)
+# so the app can write deployed sites into it without EACCES errors.
+# The named volume in docker-compose will inherit this ownership.
+RUN mkdir -p /var/www/user-sites /tmp/deployboard-builds && \
+    chown -R deployboard:deployboard /app /var/www/user-sites /tmp/deployboard-builds && \
+    chmod 755 /var/www/user-sites /tmp/deployboard-builds
+
 USER deployboard
 
 EXPOSE 3001
